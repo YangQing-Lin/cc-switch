@@ -197,8 +197,6 @@ export const tauriAPI = {
     });
   },
 
-  // （保留空位，取消迁移提示）
-
   // 选择配置目录
   selectConfigDirectory: async (
     defaultPath?: string,
@@ -275,38 +273,6 @@ export const tauriAPI = {
     }
   },
 
-  // VS Code: 获取 settings.json 状态
-  getVSCodeSettingsStatus: async (): Promise<{
-    exists: boolean;
-    path: string;
-    error?: string;
-  }> => {
-    try {
-      return await invoke("get_vscode_settings_status");
-    } catch (error) {
-      console.error("获取 VS Code 设置状态失败:", error);
-      return { exists: false, path: "", error: String(error) };
-    }
-  },
-
-  // VS Code: 读取 settings.json 文本
-  readVSCodeSettings: async (): Promise<string> => {
-    try {
-      return await invoke("read_vscode_settings");
-    } catch (error) {
-      throw new Error(`读取 VS Code 设置失败: ${String(error)}`);
-    }
-  },
-
-  // VS Code: 写回 settings.json 文本（不自动创建）
-  writeVSCodeSettings: async (content: string): Promise<boolean> => {
-    try {
-      return await invoke("write_vscode_settings", { content });
-    } catch (error) {
-      throw new Error(`写入 VS Code 设置失败: ${String(error)}`);
-    }
-  },
-
   // Claude 插件：获取 ~/.claude/config.json 状态
   getClaudePluginStatus: async (): Promise<ConfigStatus> => {
     try {
@@ -344,6 +310,54 @@ export const tauriAPI = {
       return await invoke<boolean>("is_claude_plugin_applied");
     } catch (error) {
       throw new Error(`检测 Claude 插件配置失败: ${String(error)}`);
+    }
+  },
+
+  // 导出配置到文件
+  exportConfigToFile: async (filePath: string): Promise<{
+    success: boolean;
+    message: string;
+    filePath: string;
+  }> => {
+    try {
+      return await invoke("export_config_to_file", { filePath });
+    } catch (error) {
+      throw new Error(`导出配置失败: ${String(error)}`);
+    }
+  },
+
+  // 从文件导入配置
+  importConfigFromFile: async (filePath: string): Promise<{
+    success: boolean;
+    message: string;
+    backupId?: string;
+  }> => {
+    try {
+      return await invoke("import_config_from_file", { filePath });
+    } catch (error) {
+      throw new Error(`导入配置失败: ${String(error)}`);
+    }
+  },
+
+  // 保存文件对话框
+  saveFileDialog: async (defaultName: string): Promise<string | null> => {
+    try {
+      const result = await invoke<string | null>("save_file_dialog", { defaultName });
+      return result;
+    } catch (error) {
+      console.error("打开保存对话框失败:", error);
+      return null;
+    }
+  },
+
+  // 打开文件对话框
+  openFileDialog: async (): Promise<string | null> => {
+    try {
+      const result = await invoke<string | null>("open_file_dialog");
+      return result;
+    } catch (error) {
+      console.error("打开文件对话框失败:", error);
+      return null;
     }
   },
 };

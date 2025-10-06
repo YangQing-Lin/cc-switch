@@ -3,11 +3,11 @@ mod claude_plugin;
 mod codex_config;
 mod commands;
 mod config;
+mod import_export;
 mod migration;
 mod provider;
 mod settings;
 mod store;
-mod vscode;
 
 use store::AppState;
 use tauri::{
@@ -416,13 +416,14 @@ pub fn run() {
             commands::save_settings,
             commands::check_for_updates,
             commands::is_portable_mode,
-            commands::get_vscode_settings_status,
-            commands::read_vscode_settings,
-            commands::write_vscode_settings,
             commands::get_claude_plugin_status,
             commands::read_claude_plugin_config,
             commands::apply_claude_plugin_config,
             commands::is_claude_plugin_applied,
+            import_export::export_config_to_file,
+            import_export::import_config_from_file,
+            import_export::save_file_dialog,
+            import_export::open_file_dialog,
             update_tray_menu,
         ]);
 
