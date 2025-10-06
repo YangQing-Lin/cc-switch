@@ -117,7 +117,155 @@ pub fn write_codex_live_atomic(auth: &Value, config_text_opt: Option<&str>) -> R
 
 ---
 
-### 4. 原子文件写入实现
+### 4. 配置文件备份、恢复与归档机制
+
+#### 4.1 备份（Backup）触发条件
+
+**常规备份 (config.json.bak)**
+- **触发时机**: 每次保存配置文件前自动触发（`app_config.rs:111-116`）
+- **文件位置**: `~/.cc-switch/config.json.bak`
+- **备份策略**: 覆盖式备份，仅保留最新一次
+- **用途**: 防止配置文件损坏，支持快速恢复最近版本
+
+```rust
+// 保存配置时自动备份
+if config_path.exists() {
+    let backup_path = get_app_config_dir().join("config.json.bak");
+    if let Err(e) = copy_file(&config_path, &backup_path) {
+        log::warn!("备份 config.json 到 .bak 失败: {}", e);
+    }
+}
+```
+
+#### 4.2 归档（Archive）触发条件
+
+**场景 1: v1→v2 版本升级归档**
+- **触发时机**: 检测到 v1 格式配置时自动触发（`app_config.rs:82-96`）
+- **文件位置**: `~/.cc-switch/config.v1.backup.<timestamp>.json`
+- **归档内容**: 升级前的完整 v1 配置
+- **目的**: 保留升级前的配置快照，支持降级恢复
+
+```rust
+// v1→v2 升级前备份
+let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+let backup_path = backup_dir.join(format!("config.v1.backup.{}.json", ts));
+match copy_file(&config_path, &backup_path) {
+    Ok(()) => log::info!("已备份旧版配置文件: {}", backup_path.display()),
+    Err(e) => log::warn!("备份旧版配置文件失败: {}", e),
+}
+```
+
+**场景 2: 副本文件迁移归档**
+- **触发时机**: 首次启动扫描到副本文件时触发（`migration.rs:353-381`）
+- **文件位置**: `~/.cc-switch/archive/<timestamp>/<category>/`
+- **归档内容**:
+  - Claude 副本: `settings-*.json`
+  - Codex 副本: `auth-*.json` + `config-*.toml`
+  - 主配置: 迁移前的 `config.json`
+- **目的**: 安全保存旧版副本文件，避免数据丢失
+
+```rust
+// 归档副本文件
+for (_, p, _) in claude_items.into_iter() {
+    match archive_file(ts, "claude", &p) {
+        Ok(Some(_)) => {
+            let _ = delete_file(&p);  // 归档成功后删除原文件
+        }
+        _ => {
+            // 归档失败则不删除原文件，保守处理
+        }
+    }
+}
+```
+
+**场景 3: 迁移前主配置归档**
+- **触发时机**: 副本文件迁移前（`migration.rs:165-170`）
+- **文件位置**: `~/.cc-switch/archive/<timestamp>/cc-switch/config.json`
+- **归档内容**: 迁移前的主配置文件
+- **目的**: 保留迁移前的配置状态
+
+#### 4.3 恢复（Restore）触发条件
+
+**自动回滚机制（Codex 双文件写入失败）**
+- **触发时机**: Codex 第二步写入失败时自动触发（`codex_config.rs:98-106`）
+- **恢复范围**: 第一步已写入的 `auth.json`
+- **恢复方式**:
+  - 若原文件存在 → 恢复旧内容
+  - 若原文件不存在 → 删除新写入的文件
+- **目的**: 保证双文件事务一致性
+
+```rust
+// Codex 写入失败自动回滚
+if let Err(e) = write_text_file(&config_path, &cfg_text) {
+    // 回滚 auth.json 到旧内容
+    if let Some(bytes) = old_auth {
+        let _ = atomic_write(&auth_path, &bytes);
+    } else {
+        let _ = delete_file(&auth_path);
+    }
+    return Err(e);
+}
+```
+
+**手动恢复（用户操作）**
+- **触发方式**: GUI 中无原生恢复功能，需手动操作
+- **恢复步骤**:
+  1. 从 `.bak` 或归档目录找到备份文件
+  2. 手动复制并重命名为 `config.json`
+  3. 重启应用加载恢复的配置
+
+#### 4.4 归档目录结构
+
+```
+~/.cc-switch/
+├── config.json              # 主配置文件
+├── config.json.bak          # 最近一次备份
+├── settings.json            # 应用设置
+├── migrated.copies.v1       # 迁移标记文件
+└── archive/                 # 归档根目录
+    ├── <timestamp1>/
+    │   ├── cc-switch/
+    │   │   └── config.json  # 迁移前主配置归档
+    │   ├── claude/
+    │   │   ├── settings-provider1.json
+    │   │   └── settings-provider2.json
+    │   └── codex/
+    │       ├── auth-provider1.json
+    │       └── config-provider1.toml
+    ├── <timestamp2>/
+    │   └── ...
+    └── config.v1.backup.<timestamp>.json  # v1→v2 升级归档
+```
+
+#### 4.5 归档文件管理
+
+**归档文件创建**（`config.rs:74-93`）
+```rust
+pub fn archive_file(ts: u64, category: &str, src: &Path) -> Result<Option<PathBuf>, String> {
+    if !src.exists() {
+        return Ok(None);
+    }
+    let mut dest_dir = get_archive_root();
+    dest_dir.push(ts.to_string());
+    dest_dir.push(category);
+    fs::create_dir_all(&dest_dir)?;
+
+    let file_name = src.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let mut dest = dest_dir.join(file_name);
+    dest = ensure_unique_path(dest);  // 避免文件名冲突
+
+    copy_file(src, &dest)?;
+    Ok(Some(dest))
+}
+```
+
+**归档清理策略**
+- 当前版本：无自动清理机制
+- 建议改进：保留最近 N 个归档，自动清理旧归档（参见潜在改进建议）
+
+---
+
+### 5. 原子文件写入实现
 
 所有配置文件写入都使用原子操作，避免半写状态导致配置损坏。
 
@@ -179,7 +327,7 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
 
 ---
 
-### 5. 配置迁移系统
+### 6. 配置迁移系统
 
 #### 迁移场景
 
@@ -249,7 +397,7 @@ fn dedupe_one(
 
 ---
 
-### 6. 系统托盘菜单
+### 7. 系统托盘菜单
 
 #### 动态菜单生成
 
@@ -369,7 +517,7 @@ async fn update_tray_menu(
 
 ---
 
-### 7. 配置文件路径管理
+### 8. 配置文件路径管理
 
 #### 路径解析策略
 
@@ -441,7 +589,7 @@ pub fn get_claude_settings_path() -> PathBuf {
 
 ---
 
-### 8. VS Code 集成
+### 9. VS Code 集成
 
 #### 自动检测逻辑
 
@@ -552,7 +700,7 @@ pub async fn write_vscode_settings(content: String) -> Result<bool, String> {
 
 ---
 
-### 9. Tauri 命令层
+### 10. Tauri 命令层
 
 #### 供应商 CRUD 操作
 
@@ -627,7 +775,7 @@ fn validate_provider_settings(app_type: &AppType, provider: &Provider) -> Result
 
 ---
 
-### 10. 应用设置管理
+### 11. 应用设置管理
 
 #### 设置项结构
 
@@ -712,7 +860,7 @@ fn normalize_paths(&mut self) {
 
 ---
 
-### 11. 平台特定功能
+### 12. 平台特定功能
 
 #### macOS Dock 可见性管理
 
