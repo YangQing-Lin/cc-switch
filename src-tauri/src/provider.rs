@@ -19,6 +19,9 @@ pub struct Provider {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "createdAt")]
     pub created_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "sortIndex")]
+    pub sort_index: Option<usize>,
     /// 供应商元数据（不写入 live 配置，仅存于 ~/.cc-switch/config.json）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<ProviderMeta>,
@@ -39,25 +42,61 @@ impl Provider {
             website_url,
             category: None,
             created_at: None,
+            sort_index: None,
             meta: None,
         }
     }
 }
 
 /// 供应商管理器
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderManager {
     pub providers: HashMap<String, Provider>,
     pub current: String,
 }
 
-impl Default for ProviderManager {
-    fn default() -> Self {
-        Self {
-            providers: HashMap::new(),
-            current: String::new(),
-        }
-    }
+/// 用量查询脚本配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageScript {
+    pub enabled: bool,
+    pub language: String,
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
+}
+
+/// 用量数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "planName")]
+    pub plan_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "isValid")]
+    pub is_valid: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "invalidMessage")]
+    pub invalid_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remaining: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+/// 用量查询结果（支持多套餐）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Vec<UsageData>>, // 支持返回多个套餐
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// 供应商元数据
@@ -66,6 +105,9 @@ pub struct ProviderMeta {
     /// 自定义端点列表（按 URL 去重存储）
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom_endpoints: HashMap<String, crate::settings::CustomEndpoint>,
+    /// 用量查询脚本配置
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_script: Option<UsageScript>,
 }
 
 impl ProviderManager {

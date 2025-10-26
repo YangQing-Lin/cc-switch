@@ -26,7 +26,7 @@ export interface ProviderPreset {
 
 export const providerPresets: ProviderPreset[] = [
   {
-    name: "Claude官方",
+    name: "Claude Official",
     websiteUrl: "https://www.anthropic.com/claude-code",
     settingsConfig: {
       env: {},
@@ -48,7 +48,7 @@ export const providerPresets: ProviderPreset[] = [
     category: "cn_official",
   },
   {
-    name: "智谱GLM",
+    name: "Zhipu GLM",
     websiteUrl: "https://open.bigmodel.cn",
     settingsConfig: {
       env: {
@@ -65,7 +65,7 @@ export const providerPresets: ProviderPreset[] = [
     category: "cn_official",
   },
   {
-    name: "Qwen-Coder",
+    name: "Qwen Coder",
     websiteUrl: "https://bailian.console.aliyun.com",
     settingsConfig: {
       env: {
@@ -92,7 +92,7 @@ export const providerPresets: ProviderPreset[] = [
     category: "cn_official",
   },
   {
-    name: "魔搭",
+    name: "ModelScope",
     websiteUrl: "https://modelscope.cn",
     settingsConfig: {
       env: {
@@ -103,6 +103,47 @@ export const providerPresets: ProviderPreset[] = [
       },
     },
     category: "aggregator",
+  },
+  {
+    name: "KAT-Coder",
+    websiteUrl: "https://console.streamlake.ai/wanqing/",
+    apiKeyUrl: "https://console.streamlake.ai/console/wanqing/api-key",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL:
+          "https://vanchin.streamlake.ai/api/gateway/v1/endpoints/${ENDPOINT_ID}/claude-code-proxy",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "KAT-Coder",
+        ANTHROPIC_SMALL_FAST_MODEL: "KAT-Coder",
+      },
+    },
+    category: "cn_official",
+    templateValues: {
+      ENDPOINT_ID: {
+        label: "Vanchin Endpoint ID",
+        placeholder: "ep-xxx-xxx",
+        defaultValue: "",
+        editorValue: "",
+      },
+    },
+  },
+  {
+    name: "Longcat",
+    websiteUrl: "https://longcat.chat/platform",
+    apiKeyUrl: "https://longcat.chat/platform/api_keys",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.longcat.chat/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "LongCat-Flash-Chat",
+        ANTHROPIC_SMALL_FAST_MODEL: "LongCat-Flash-Chat",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "LongCat-Flash-Chat",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "LongCat-Flash-Chat",
+        CLAUDE_CODE_MAX_OUTPUT_TOKENS: "6000",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
+      },
+    },
+    category: "cn_official",
   },
   {
     name: "PackyCode",
@@ -123,27 +164,5 @@ export const providerPresets: ProviderPreset[] = [
       "https://api-cf-pro.packycode.com",
     ],
     category: "third_party",
-  },
-  {
-    name: "KAT-Coder 官方",
-    websiteUrl: "https://console.streamlake.ai/wanqing/",
-    apiKeyUrl: "https://console.streamlake.ai/console/wanqing/api-key",
-    settingsConfig: {
-      env: {
-        ANTHROPIC_BASE_URL: "https://vanchin.streamlake.ai/api/gateway/v1/endpoints/${ENDPOINT_ID}/claude-code-proxy",
-        ANTHROPIC_AUTH_TOKEN: "",
-        ANTHROPIC_MODEL: "KAT-Coder",
-        ANTHROPIC_SMALL_FAST_MODEL: "KAT-Coder",
-      },
-    },
-    category: "cn_official",
-    templateValues: {
-      ENDPOINT_ID: {
-        label: "Vanchin Endpoint ID",
-        placeholder: "ep-xxx-xxx",
-        defaultValue: "",
-        editorValue: "",
-      },
-    },
   },
 ];

@@ -22,6 +22,9 @@ pub struct AppSettings {
     pub show_in_tray: bool,
     #[serde(default = "default_minimize_to_tray_on_close")]
     pub minimize_to_tray_on_close: bool,
+    /// 是否启用 Claude 插件联动
+    #[serde(default)]
+    pub enable_claude_plugin_integration: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -49,6 +52,7 @@ impl Default for AppSettings {
         Self {
             show_in_tray: true,
             minimize_to_tray_on_close: true,
+            enable_claude_plugin_integration: false,
             claude_config_dir: None,
             codex_config_dir: None,
             language: None,
@@ -60,7 +64,12 @@ impl Default for AppSettings {
 
 impl AppSettings {
     fn settings_path() -> PathBuf {
-        crate::config::get_app_config_dir().join("settings.json")
+        // settings.json 必须使用固定路径，不能被 app_config_dir 覆盖
+        // 否则会造成循环依赖：读取 settings 需要知道路径，但路径在 settings 中
+        dirs::home_dir()
+            .expect("无法获取用户主目录")
+            .join(".cc-switch")
+            .join("settings.json")
     }
 
     fn normalize_paths(&mut self) {

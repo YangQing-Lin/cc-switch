@@ -10,6 +10,7 @@ import { AppSwitcher } from "./components/AppSwitcher";
 import SettingsModal from "./components/SettingsModal";
 import { UpdateBadge } from "./components/UpdateBadge";
 import { Plus, Settings, Moon, Sun } from "lucide-react";
+import McpPanel from "./components/mcp/McpPanel";
 import { buttonStyles } from "./lib/styles";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { extractErrorMessage } from "./utils/errorUtils";
@@ -22,7 +23,7 @@ function App() {
   const [currentProviderId, setCurrentProviderId] = useState<string>("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(
-    null
+    null,
   );
   const [notification, setNotification] = useState<{
     message: string;
@@ -36,13 +37,14 @@ function App() {
     onConfirm: () => void;
   } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMcpOpen, setIsMcpOpen] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 设置通知的辅助函数
   const showNotification = (
     message: string,
     type: "success" | "error",
-    duration = 3000
+    duration = 3000,
   ) => {
     // 清除之前的定时器
     if (timeoutRef.current) {
@@ -181,9 +183,14 @@ function App() {
     });
   };
 
-  // 同步 Claude 插件配置（写入/移除固定 JSON）
+  // 同步 Claude 插件配置（按设置决定是否联动；开启时：非官方写入，官方移除）
   const syncClaudePlugin = async (providerId: string, silent = false) => {
     try {
+      const settings = await window.api.getSettings();
+      if (!(settings as any)?.enableClaudePluginIntegration) {
+        // 未开启联动：不执行写入/移除
+        return;
+      }
       const provider = providers[providerId];
       if (!provider) return;
       const isOfficial = provider.category === "official";
@@ -208,24 +215,33 @@ function App() {
   };
 
   const handleSwitchProvider = async (id: string) => {
-    const success = await window.api.switchProvider(id, activeApp);
-    if (success) {
-      setCurrentProviderId(id);
-      // 显示重启提示
-      const appName = t(`apps.${activeApp}`);
-      showNotification(
-        t("notifications.switchSuccess", { appName }),
-        "success",
-        2000
-      );
-      // 更新托盘菜单
-      await window.api.updateTrayMenu();
+    try {
+      const success = await window.api.switchProvider(id, activeApp);
+      if (success) {
+        setCurrentProviderId(id);
+        // 显示重启提示
+        const appName = t(`apps.${activeApp}`);
+        showNotification(
+          t("notifications.switchSuccess", { appName }),
+          "success",
+          2000,
+        );
+        // 更新托盘菜单
+        await window.api.updateTrayMenu();
 
-      if (activeApp === "claude") {
-        await syncClaudePlugin(id, true);
+        if (activeApp === "claude") {
+          await syncClaudePlugin(id, true);
+        }
+      } else {
+        showNotification(t("notifications.switchFailed"), "error");
       }
-    } else {
-      showNotification(t("notifications.switchFailed"), "error");
+    } catch (error) {
+      const detail = extractErrorMessage(error);
+      const msg = detail
+        ? `${t("notifications.switchFailed")}: ${detail}`
+        : t("notifications.switchFailed");
+      // 详细错误展示稍长时间，便于用户阅读
+      showNotification(msg, "error", detail ? 6000 : 3000);
     }
   };
 
@@ -298,6 +314,13 @@ function App() {
             <AppSwitcher activeApp={activeApp} onSwitch={setActiveApp} />
 
             <button
+              onClick={() => setIsMcpOpen(true)}
+              className="inline-flex items-center gap-2 px-7 py-2 text-sm font-medium rounded-lg transition-colors bg-emerald-500 text-white hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700"
+            >
+              MCP
+            </button>
+
+            <button
               onClick={() => setIsAddModalOpen(true)}
               className={`inline-flex items-center gap-2 ${buttonStyles.primary}`}
             >
@@ -315,7 +338,7 @@ function App() {
             {/* 通知组件 - 相对于视窗定位 */}
             {notification && (
               <div
-                className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 ${
+                className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-[80] px-4 py-3 rounded-lg shadow-lg transition-all duration-300 ${
                   notification.type === "error"
                     ? "bg-red-500 text-white"
                     : "bg-green-500 text-white"
@@ -333,6 +356,7 @@ function App() {
               onEdit={setEditingProviderId}
               appType={activeApp}
               onNotify={showNotification}
+              onProvidersUpdated={loadProviders}
             />
           </div>
         </div>
@@ -369,6 +393,15 @@ function App() {
         <SettingsModal
           onClose={() => setIsSettingsOpen(false)}
           onImportSuccess={handleImportSuccess}
+          onNotify={showNotification}
+        />
+      )}
+
+      {isMcpOpen && (
+        <McpPanel
+          appType={activeApp}
+          onClose={() => setIsMcpOpen(false)}
+          onNotify={showNotification}
         />
       )}
     </div>

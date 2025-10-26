@@ -1,6 +1,6 @@
 [package]
 name = "cc-switch"
-version = "3.4.0"
+version = "3.5.1"
 description = "Claude Code & Codex 供应商配置管理工具"
 authors = ["Jason Young"]
 license = "MIT"
@@ -28,11 +28,14 @@ tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-store = "2"
 dirs = "5.0"
 toml = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 futures = "0.3"
+regex = "1.10"
+rquickjs = { version = "0.8", features = ["array-buffer", "classes"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"

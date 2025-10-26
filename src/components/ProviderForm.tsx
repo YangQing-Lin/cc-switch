@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Provider, ProviderCategory, CustomEndpoint } from "../types";
 import { AppType } from "../lib/tauri-api";
 import {
@@ -41,11 +42,11 @@ const collectTemplatePaths = (
   source: unknown,
   templateKeys: string[],
   currentPath: TemplatePath = [],
-  acc: TemplatePath[] = []
+  acc: TemplatePath[] = [],
 ): TemplatePath[] => {
   if (typeof source === "string") {
     const hasPlaceholder = templateKeys.some((key) =>
-      source.includes(`\${${key}}`)
+      source.includes(`\${${key}}`),
     );
     if (hasPlaceholder) {
       acc.push([...currentPath]);
@@ -55,14 +56,14 @@ const collectTemplatePaths = (
 
   if (Array.isArray(source)) {
     source.forEach((item, index) =>
-      collectTemplatePaths(item, templateKeys, [...currentPath, index], acc)
+      collectTemplatePaths(item, templateKeys, [...currentPath, index], acc),
     );
     return acc;
   }
 
   if (source && typeof source === "object") {
     Object.entries(source).forEach(([key, value]) =>
-      collectTemplatePaths(value, templateKeys, [...currentPath, key], acc)
+      collectTemplatePaths(value, templateKeys, [...currentPath, key], acc),
     );
   }
 
@@ -81,7 +82,7 @@ const getValueAtPath = (source: any, path: TemplatePath) => {
 const setValueAtPath = (
   target: any,
   path: TemplatePath,
-  value: unknown
+  value: unknown,
 ): any => {
   if (path.length === 0) {
     return value;
@@ -119,7 +120,7 @@ const setValueAtPath = (
 const applyTemplateValuesToConfigString = (
   presetConfig: any,
   currentConfigString: string,
-  values: TemplateValueMap
+  values: TemplateValueMap,
 ) => {
   const replacedConfig = applyTemplateValues(presetConfig, values);
   const templateKeys = Object.keys(values);
@@ -190,6 +191,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   onSubmit,
   onClose,
 }) => {
+  const { t } = useTranslation();
   // 对于 Codex，需要分离 auth 和 config
   const isCodex = appType === "codex";
 
@@ -201,7 +203,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       : "",
   });
   const [category, setCategory] = useState<ProviderCategory | undefined>(
-    initialData?.category
+    initialData?.category,
   );
 
   // Claude 模型配置状态
@@ -222,7 +224,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     useState(false);
   // 新建供应商：收集端点测速弹窗中的“自定义端点”，提交时一次性落盘到 meta.custom_endpoints
   const [draftCustomEndpoints, setDraftCustomEndpoints] = useState<string[]>(
-    []
+    [],
   );
   // 端点测速弹窗状态
   const [isEndpointModalOpen, setIsEndpointModalOpen] = useState(false);
@@ -230,7 +232,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     useState(false);
   // -1 表示自定义，null 表示未选择，>= 0 表示预设索引
   const [selectedCodexPreset, setSelectedCodexPreset] = useState<number | null>(
-    showPresets && isCodex ? -1 : null
+    showPresets && isCodex ? -1 : null,
   );
 
   const setCodexAuth = (value: string) => {
@@ -242,7 +244,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     setCodexConfigState((prev) =>
       typeof value === "function"
         ? (value as (input: string) => string)(prev)
-        : value
+        : value,
     );
   };
 
@@ -303,7 +305,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       }
       try {
         const stored = window.localStorage.getItem(
-          CODEX_COMMON_CONFIG_STORAGE_KEY
+          CODEX_COMMON_CONFIG_STORAGE_KEY,
         );
         if (stored && stored.trim()) {
           return stored.trim();
@@ -320,7 +322,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
 
   // -1 表示自定义，null 表示未选择，>= 0 表示预设索引
   const [selectedPreset, setSelectedPreset] = useState<number | null>(
-    showPresets ? -1 : null
+    showPresets ? -1 : null,
   );
   const [apiKey, setApiKey] = useState("");
   const [codexAuthError, setCodexAuthError] = useState("");
@@ -331,21 +333,20 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     useState("");
 
   const validateSettingsConfig = (value: string): string => {
-    return validateJsonConfig(value, "配置内容");
+    const err = validateJsonConfig(value, "配置内容");
+    return err ? t("providerForm.configJsonError") : "";
   };
 
   const validateCodexAuth = (value: string): string => {
-    if (!value.trim()) {
-      return "";
-    }
+    if (!value.trim()) return "";
     try {
       const parsed = JSON.parse(value);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return "auth.json 必须是 JSON 对象";
+        return t("providerForm.authJsonRequired");
       }
       return "";
     } catch {
-      return "auth.json 格式错误，请检查JSON语法";
+      return t("providerForm.authJsonError");
     }
   };
 
@@ -389,11 +390,11 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         const configString = JSON.stringify(
           initialData.settingsConfig,
           null,
-          2
+          2,
         );
         const hasCommon = hasCommonConfigSnippet(
           configString,
-          commonConfigSnippet
+          commonConfigSnippet,
         );
         setUseCommonConfig(hasCommon);
         setSettingsConfigError(validateSettingsConfig(configString));
@@ -409,14 +410,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
           if (config.env) {
             setClaudeModel(config.env.ANTHROPIC_MODEL || "");
             setClaudeSmallFastModel(
-              config.env.ANTHROPIC_SMALL_FAST_MODEL || ""
+              config.env.ANTHROPIC_SMALL_FAST_MODEL || "",
             );
             setBaseUrl(config.env.ANTHROPIC_BASE_URL || ""); // 初始化基础 URL
 
             // 初始化 Kimi 模型选择
             setKimiAnthropicModel(config.env.ANTHROPIC_MODEL || "");
             setKimiAnthropicSmallFastModel(
-              config.env.ANTHROPIC_SMALL_FAST_MODEL || ""
+              config.env.ANTHROPIC_SMALL_FAST_MODEL || "",
             );
           }
         }
@@ -424,7 +425,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         // Codex 初始化时检查 TOML 通用配置
         const hasCommon = hasTomlCommonConfigSnippet(
           codexConfig,
-          codexCommonConfigSnippet
+          codexCommonConfigSnippet,
         );
         setUseCodexCommonConfig(hasCommon);
       }
@@ -444,7 +445,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       if (selectedPreset !== null && selectedPreset >= 0) {
         const preset = providerPresets[selectedPreset];
         setCategory(
-          preset?.category || (preset?.isOfficial ? "official" : undefined)
+          preset?.category || (preset?.isOfficial ? "official" : undefined),
         );
       } else if (selectedPreset === -1) {
         setCategory("custom");
@@ -453,7 +454,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       if (selectedCodexPreset !== null && selectedCodexPreset >= 0) {
         const preset = codexProviderPresets[selectedCodexPreset];
         setCategory(
-          preset?.category || (preset?.isOfficial ? "official" : undefined)
+          preset?.category || (preset?.isOfficial ? "official" : undefined),
         );
       } else if (selectedCodexPreset === -1) {
         setCategory("custom");
@@ -505,7 +506,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       if (commonConfigSnippet.trim()) {
         window.localStorage.setItem(
           COMMON_CONFIG_STORAGE_KEY,
-          commonConfigSnippet
+          commonConfigSnippet,
         );
       } else {
         window.localStorage.removeItem(COMMON_CONFIG_STORAGE_KEY);
@@ -520,7 +521,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     setError("");
 
     if (!formData.name) {
-      setError("请填写供应商名称");
+      setError(t("providerForm.fillSupplierName"));
       return;
     }
 
@@ -535,7 +536,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       }
       // Codex: 仅要求 auth.json 必填；config.toml 可为空
       if (!codexAuth.trim()) {
-        setError("请填写 auth.json 配置");
+        setError(t("providerForm.fillAuthJson"));
         return;
       }
 
@@ -552,7 +553,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                 ? authJson.OPENAI_API_KEY.trim()
                 : "";
             if (!key) {
-              setError("请填写 OPENAI_API_KEY");
+              setError(t("providerForm.fillApiKey"));
               return;
             }
           }
@@ -563,16 +564,16 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
           config: codexConfig ?? "",
         };
       } catch (err) {
-        setError("auth.json 格式错误，请检查JSON语法");
+        setError(t("providerForm.authJsonError"));
         return;
       }
     } else {
       const currentSettingsError = validateSettingsConfig(
-        formData.settingsConfig
+        formData.settingsConfig,
       );
       setSettingsConfigError(currentSettingsError);
       if (currentSettingsError) {
-        setError(currentSettingsError);
+        setError(t("providerForm.configJsonError"));
         return;
       }
 
@@ -586,21 +587,21 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
             ""
           ).trim();
           if (!resolvedValue) {
-            setError(`请填写 ${config.label}`);
+            setError(t("providerForm.fillParameter", { label: config.label }));
             return;
           }
         }
       }
       // Claude: 原有逻辑
       if (!formData.settingsConfig.trim()) {
-        setError("请填写配置内容");
+        setError(t("providerForm.fillConfigContent"));
         return;
       }
 
       try {
         settingsConfig = JSON.parse(formData.settingsConfig);
       } catch (err) {
-        setError("配置JSON格式错误，请检查语法");
+        setError(t("providerForm.configJsonError"));
         return;
       }
     }
@@ -614,26 +615,68 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       ...(category ? { category } : {}),
     };
 
-    // 若为“新建供应商”，且已在弹窗中添加了自定义端点，则随提交一并落盘
-    if (!initialData && draftCustomEndpoints.length > 0) {
-      const now = Date.now();
-      const customMap: Record<string, CustomEndpoint> = {};
-      for (const raw of draftCustomEndpoints) {
-        const url = raw.trim().replace(/\/+$/, "");
-        if (!url) continue;
-        if (!customMap[url]) {
-          customMap[url] = { url, addedAt: now };
+    // 若为"新建供应商"，将端点候选一并随提交落盘到 meta.custom_endpoints：
+    // - 用户在弹窗中新增的自定义端点（draftCustomEndpoints，已去重）
+    // - 预设中的 endpointCandidates（若存在）
+    // - 当前选中的基础 URL（baseUrl/codexBaseUrl）
+    if (!initialData) {
+      const urlSet = new Set<string>();
+      const push = (raw?: string) => {
+        const url = (raw || "").trim().replace(/\/+$/, "");
+        if (url) urlSet.add(url);
+      };
+
+      // 自定义端点（仅来自用户新增）
+      for (const u of draftCustomEndpoints) push(u);
+
+      // 预设端点候选
+      if (!isCodex) {
+        if (
+          selectedPreset !== null &&
+          selectedPreset >= 0 &&
+          selectedPreset < providerPresets.length
+        ) {
+          const preset = providerPresets[selectedPreset] as any;
+          if (Array.isArray(preset?.endpointCandidates)) {
+            for (const u of preset.endpointCandidates as string[]) push(u);
+          }
         }
+        // 当前 Claude 基础地址
+        push(baseUrl);
+      } else {
+        if (
+          selectedCodexPreset !== null &&
+          selectedCodexPreset >= 0 &&
+          selectedCodexPreset < codexProviderPresets.length
+        ) {
+          const preset = codexProviderPresets[selectedCodexPreset] as any;
+          if (Array.isArray(preset?.endpointCandidates)) {
+            for (const u of preset.endpointCandidates as string[]) push(u);
+          }
+        }
+        // 当前 Codex 基础地址
+        push(codexBaseUrl);
       }
-      onSubmit({ ...basePayload, meta: { custom_endpoints: customMap } });
-      return;
+
+      const urls = Array.from(urlSet.values());
+      if (urls.length > 0) {
+        const now = Date.now();
+        const customMap: Record<string, CustomEndpoint> = {};
+        for (const url of urls) {
+          if (!customMap[url]) {
+            customMap[url] = { url, addedAt: now, lastUsed: undefined };
+          }
+        }
+        onSubmit({ ...basePayload, meta: { custom_endpoints: customMap } });
+        return;
+      }
     }
 
     onSubmit(basePayload);
   };
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
 
@@ -663,13 +706,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     const { updatedConfig, error: snippetError } = updateCommonConfigSnippet(
       formData.settingsConfig,
       commonConfigSnippet,
-      checked
+      checked,
     );
 
     if (snippetError) {
       setCommonConfigError(snippetError);
       if (snippetError.includes("配置 JSON 解析失败")) {
-        setSettingsConfigError("配置JSON格式错误，请检查语法");
+        setSettingsConfigError(t("providerForm.configJsonError"));
       }
       setUseCommonConfig(false);
       return;
@@ -696,7 +739,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         const { updatedConfig } = updateCommonConfigSnippet(
           formData.settingsConfig,
           previousSnippet,
-          false
+          false,
         );
         // 直接更新 formData，不通过 handleChange
         updateSettingsConfigValue(updatedConfig);
@@ -718,25 +761,25 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       const removeResult = updateCommonConfigSnippet(
         formData.settingsConfig,
         previousSnippet,
-        false
+        false,
       );
       if (removeResult.error) {
         setCommonConfigError(removeResult.error);
         if (removeResult.error.includes("配置 JSON 解析失败")) {
-          setSettingsConfigError("配置JSON格式错误，请检查语法");
+          setSettingsConfigError(t("providerForm.configJsonError"));
         }
         return;
       }
       const addResult = updateCommonConfigSnippet(
         removeResult.updatedConfig,
         value,
-        true
+        true,
       );
 
       if (addResult.error) {
         setCommonConfigError(addResult.error);
         if (addResult.error.includes("配置 JSON 解析失败")) {
-          setSettingsConfigError("配置JSON格式错误，请检查语法");
+          setSettingsConfigError(t("providerForm.configJsonError"));
         }
         return;
       }
@@ -774,11 +817,11 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
               ? config.editorValue
               : (config.defaultValue ?? ""),
           },
-        ])
+        ]),
       );
       appliedSettingsConfig = applyTemplateValues(
         preset.settingsConfig,
-        initialTemplateValues
+        initialTemplateValues,
       );
     }
 
@@ -793,7 +836,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     });
     setSettingsConfigError(validateSettingsConfig(configString));
     setCategory(
-      preset.category || (preset.isOfficial ? "official" : undefined)
+      preset.category || (preset.isOfficial ? "official" : undefined),
     );
 
     // 设置选中的预设
@@ -823,7 +866,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         if (preset.name?.includes("Kimi")) {
           setKimiAnthropicModel(config.env.ANTHROPIC_MODEL || "");
           setKimiAnthropicSmallFastModel(
-            config.env.ANTHROPIC_SMALL_FAST_MODEL || ""
+            config.env.ANTHROPIC_SMALL_FAST_MODEL || "",
           );
         }
       } else {
@@ -871,7 +914,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   // Codex: 应用预设
   const applyCodexPreset = (
     preset: (typeof codexProviderPresets)[0],
-    index: number
+    index: number,
   ) => {
     const authString = JSON.stringify(preset.auth || {}, null, 2);
     setCodexAuth(authString);
@@ -889,7 +932,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
 
     setSelectedCodexPreset(index);
     setCategory(
-      preset.category || (preset.isOfficial ? "official" : undefined)
+      preset.category || (preset.isOfficial ? "official" : undefined),
     );
 
     // 清空 API Key，让用户重新输入
@@ -905,7 +948,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     const customConfig = generateThirdPartyConfig(
       "custom",
       "https://your-api-endpoint.com/v1",
-      "gpt-5-codex"
+      "gpt-5-codex",
     );
 
     setFormData({
@@ -928,7 +971,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     const configString = setApiKeyInConfig(
       formData.settingsConfig,
       key.trim(),
-      { createIfMissing: selectedPreset !== null && selectedPreset !== -1 }
+      { createIfMissing: selectedPreset !== null && selectedPreset !== -1 },
     );
 
     // 更新表单配置
@@ -1024,7 +1067,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         const { updatedConfig } = updateTomlCommonConfigSnippet(
           codexConfig,
           previousSnippet,
-          false
+          false,
         );
         setCodexConfig(updatedConfig);
         setUseCodexCommonConfig(false);
@@ -1037,12 +1080,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       const removeResult = updateTomlCommonConfigSnippet(
         codexConfig,
         previousSnippet,
-        false
+        false,
       );
       const addResult = updateTomlCommonConfigSnippet(
         removeResult.updatedConfig,
         sanitizedValue,
-        true
+        true,
       );
 
       if (addResult.error) {
@@ -1064,7 +1107,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       try {
         window.localStorage.setItem(
           CODEX_COMMON_CONFIG_STORAGE_KEY,
-          sanitizedValue
+          sanitizedValue,
         );
       } catch {
         // ignore localStorage 写入失败
@@ -1077,7 +1120,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     if (!isUpdatingFromCodexCommonConfig.current) {
       const hasCommon = hasTomlCommonConfigSnippet(
         value,
-        codexCommonConfigSnippet
+        codexCommonConfigSnippet,
       );
       setUseCodexCommonConfig(hasCommon);
     }
@@ -1305,7 +1348,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   // 处理模型输入变化，自动更新 JSON 配置
   const handleModelChange = (
     field: "ANTHROPIC_MODEL" | "ANTHROPIC_SMALL_FAST_MODEL",
-    value: string
+    value: string,
   ) => {
     if (field === "ANTHROPIC_MODEL") {
       setClaudeModel(value);
@@ -1335,7 +1378,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   // Kimi 模型选择处理函数
   const handleKimiModelChange = (
     field: "ANTHROPIC_MODEL" | "ANTHROPIC_SMALL_FAST_MODEL",
-    value: string
+    value: string,
   ) => {
     if (field === "ANTHROPIC_MODEL") {
       setKimiAnthropicModel(value);
@@ -1360,7 +1403,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   useEffect(() => {
     if (!initialData) return;
     const parsedKey = getApiKeyFromConfig(
-      JSON.stringify(initialData.settingsConfig)
+      JSON.stringify(initialData.settingsConfig),
     );
     if (parsedKey) setApiKey(parsedKey);
   }, [initialData]);
@@ -1456,13 +1499,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                 onCustomClick={handleCodexCustomClick}
                 renderCustomDescription={() => (
                   <>
-                    手动配置供应商，需要填写完整的配置信息，或者
+                    {t("providerForm.manualConfig")}
                     <button
                       type="button"
                       onClick={() => setIsCodexTemplateModalOpen(true)}
                       className="text-blue-400 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors ml-1"
                     >
-                      使用配置向导
+                      {t("providerForm.useConfigWizard")}
                     </button>
                   </>
                 )}
@@ -1474,7 +1517,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                 htmlFor="name"
                 className="block text-sm font-medium text-gray-900 dark:text-gray-100"
               >
-                供应商名称 *
+                {t("providerForm.supplierNameRequired")}
               </label>
               <input
                 type="text"
@@ -1482,7 +1525,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                placeholder="例如：Anthropic 官方"
+                placeholder={t("providerForm.supplierNamePlaceholder")}
                 required
                 autoComplete="off"
                 className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
@@ -1494,7 +1537,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                 htmlFor="websiteUrl"
                 className="block text-sm font-medium text-gray-900 dark:text-gray-100"
               >
-                官网地址
+                {t("providerForm.websiteUrl")}
               </label>
               <input
                 type="url"
@@ -1502,7 +1545,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                 name="websiteUrl"
                 value={formData.websiteUrl}
                 onChange={handleChange}
-                placeholder="https://example.com（可选）"
+                placeholder={t("providerForm.websiteUrlPlaceholder")}
                 autoComplete="off"
                 className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
               />
@@ -1516,10 +1559,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                   required={!isOfficialPreset}
                   placeholder={
                     isOfficialPreset
-                      ? "官方登录无需填写 API Key，直接保存即可"
+                      ? t("providerForm.officialNoApiKey")
                       : shouldShowKimiSelector
-                        ? "填写后可获取模型列表"
-                        : "只需要填这里，下方配置会自动填充"
+                        ? t("providerForm.kimiApiKeyHint")
+                        : t("providerForm.apiKeyAutoFill")
                   }
                   disabled={isOfficialPreset}
                 />
@@ -1531,7 +1574,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
                     >
-                      获取 API Key
+                      {t("providerForm.getApiKey")}
                     </a>
                   </div>
                 )}
@@ -1543,7 +1586,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
               templateValueEntries.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    参数配置 - {selectedTemplatePreset.name.trim()} *
+                    {t("providerForm.parameterConfig", {
+                      name: selectedTemplatePreset.name.trim(),
+                    })}
                   </h3>
                   <div className="space-y-4">
                     {templateValueEntries.map(([key, config]) => (
@@ -1582,14 +1627,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                                     applyTemplateValuesToConfigString(
                                       selectedTemplatePreset.settingsConfig,
                                       formData.settingsConfig,
-                                      nextValues
+                                      nextValues,
                                     );
                                   setFormData((prevForm) => ({
                                     ...prevForm,
                                     settingsConfig: configString,
                                   }));
                                   setSettingsConfigError(
-                                    validateSettingsConfig(configString)
+                                    validateSettingsConfig(configString),
                                   );
                                 } catch (err) {
                                   console.error("更新模板值失败:", err);
@@ -1616,7 +1661,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                     htmlFor="baseUrl"
                     className="block text-sm font-medium text-gray-900 dark:text-gray-100"
                   >
-                    请求地址
+                    {t("providerForm.apiEndpoint")}
                   </label>
                   <button
                     type="button"
@@ -1624,7 +1669,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                     className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
                   >
                     <Zap className="h-3.5 w-3.5" />
-                    管理与测速
+                    {t("providerForm.manageAndTest")}
                   </button>
                 </div>
                 <input
@@ -1632,13 +1677,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                   id="baseUrl"
                   value={baseUrl}
                   onChange={(e) => handleBaseUrlChange(e.target.value)}
-                  placeholder="https://your-api-endpoint.com"
+                  placeholder={t("providerForm.apiEndpointPlaceholder")}
                   autoComplete="off"
                   className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
                 />
                 <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
                   <p className="text-xs text-amber-600 dark:text-amber-400">
-                    💡 填写兼容 Claude API 的服务端点地址
+                    {t("providerForm.apiHint")}
                   </p>
                 </div>
               </div>
@@ -1677,8 +1722,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                   onChange={handleCodexApiKeyChange}
                   placeholder={
                     isCodexOfficialPreset
-                      ? "官方无需填写 API Key，直接保存即可"
-                      : "只需要填这里，下方 auth.json 会自动填充"
+                      ? t("providerForm.codexOfficialNoApiKey")
+                      : t("providerForm.codexApiKeyAutoFill")
                   }
                   disabled={isCodexOfficialPreset}
                   required={
@@ -1695,7 +1740,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
                     >
-                      获取 API Key
+                      {t("providerForm.getApiKey")}
                     </a>
                   </div>
                 )}
@@ -1709,7 +1754,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                     htmlFor="codexBaseUrl"
                     className="block text-sm font-medium text-gray-900 dark:text-gray-100"
                   >
-                    请求地址
+                    {t("codexConfig.apiUrlLabel")}
                   </label>
                   <button
                     type="button"
@@ -1717,7 +1762,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                     className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
                   >
                     <Zap className="h-3.5 w-3.5" />
-                    管理与测速
+                    {t("providerForm.manageAndTest")}
                   </button>
                 </div>
                 <input
@@ -1725,10 +1770,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                   id="codexBaseUrl"
                   value={codexBaseUrl}
                   onChange={(e) => handleCodexBaseUrlChange(e.target.value)}
-                  placeholder="https://your-api-endpoint.com/v1"
+                  placeholder={t("providerForm.codexApiEndpointPlaceholder")}
                   autoComplete="off"
                   className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
                 />
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {t("providerForm.codexApiHint")}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1800,7 +1850,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                           htmlFor="anthropicModel"
                           className="block text-sm font-medium text-gray-900 dark:text-gray-100"
                         >
-                          主模型 (可选)
+                          {t("providerForm.mainModel")}
                         </label>
                         <input
                           type="text"
@@ -1809,7 +1859,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                           onChange={(e) =>
                             handleModelChange("ANTHROPIC_MODEL", e.target.value)
                           }
-                          placeholder="例如: GLM-4.5"
+                          placeholder={t("providerForm.mainModelPlaceholder")}
                           autoComplete="off"
                           className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
                         />
@@ -1820,7 +1870,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                           htmlFor="anthropicSmallFastModel"
                           className="block text-sm font-medium text-gray-900 dark:text-gray-100"
                         >
-                          快速模型 (可选)
+                          {t("providerForm.fastModel")}
                         </label>
                         <input
                           type="text"
@@ -1829,10 +1879,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
                           onChange={(e) =>
                             handleModelChange(
                               "ANTHROPIC_SMALL_FAST_MODEL",
-                              e.target.value
+                              e.target.value,
                             )
                           }
-                          placeholder="例如: GLM-4.5-Air"
+                          placeholder={t("providerForm.fastModelPlaceholder")}
                           autoComplete="off"
                           className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
                         />
@@ -1841,7 +1891,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
 
                     <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
                       <p className="text-xs text-amber-600 dark:text-amber-400">
-                        💡 留空将使用供应商的默认模型
+                        {t("providerForm.modelHint")}
                       </p>
                     </div>
                   </div>
@@ -1872,7 +1922,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-white dark:hover:bg-gray-700 rounded-lg transition-colors"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="submit"

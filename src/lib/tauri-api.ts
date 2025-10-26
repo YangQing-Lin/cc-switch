@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import { Provider, Settings, CustomEndpoint } from "../types";
+import {
+  Provider,
+  Settings,
+  CustomEndpoint,
+  McpStatus,
+  McpServer,
+  McpServerSpec,
+  McpConfigResponse,
+} from "../types";
 
 // 应用类型
 export type AppType = "claude" | "codex";
@@ -92,8 +100,9 @@ export const tauriAPI = {
         app,
       });
     } catch (error) {
+      // 让调用方拿到后端的详细错误信息
       console.error("切换供应商失败:", error);
-      return false;
+      throw error;
     }
   },
 
@@ -149,9 +158,12 @@ export const tauriAPI = {
   },
 
   // 选择配置目录（可选默认路径）
-  selectConfigDirectory: async (defaultPath?: string): Promise<string | null> => {
+  selectConfigDirectory: async (
+    defaultPath?: string,
+  ): Promise<string | null> => {
     try {
-      return await invoke("pick_directory", { defaultPath });
+      // 后端参数为 snake_case：default_path
+      return await invoke("pick_directory", { default_path: defaultPath });
     } catch (error) {
       console.error("选择配置目录失败:", error);
       return null;
@@ -193,6 +205,16 @@ export const tauriAPI = {
       return await invoke("save_settings", { settings });
     } catch (error) {
       console.error("保存设置失败:", error);
+      return false;
+    }
+  },
+
+  // 重启应用程序
+  restartApp: async (): Promise<boolean> => {
+    try {
+      return await invoke("restart_app");
+    } catch (error) {
+      console.error("重启应用失败:", error);
       return false;
     }
   },
@@ -272,6 +294,188 @@ export const tauriAPI = {
       return await invoke<boolean>("is_claude_plugin_applied");
     } catch (error) {
       throw new Error(`检测 Claude 插件配置失败: ${String(error)}`);
+    }
+  },
+
+  // 查询供应商用量
+  queryProviderUsage: async (
+    providerId: string,
+    app: AppType
+  ): Promise<import("../types").UsageResult> => {
+    try {
+      return await invoke("query_provider_usage", {
+        provider_id: providerId,
+        providerId: providerId,
+        app_type: app,
+        app: app,
+        appType: app,
+      });
+    } catch (error) {
+      throw new Error(`查询用量失败: ${String(error)}`);
+    }
+  },
+
+  // Claude MCP：获取状态（用户级 ~/.claude.json）
+  getClaudeMcpStatus: async (): Promise<McpStatus> => {
+    try {
+      return await invoke<McpStatus>("get_claude_mcp_status");
+    } catch (error) {
+      console.error("获取 MCP 状态失败:", error);
+      throw error;
+    }
+  },
+
+  // Claude MCP：读取 ~/.claude.json 文本
+  readClaudeMcpConfig: async (): Promise<string | null> => {
+    try {
+      return await invoke<string | null>("read_claude_mcp_config");
+    } catch (error) {
+      console.error("读取 mcp.json 失败:", error);
+      throw error;
+    }
+  },
+
+  // Claude MCP：新增/更新服务器定义
+  upsertClaudeMcpServer: async (
+    id: string,
+    spec: McpServerSpec | Record<string, any>,
+  ): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("upsert_claude_mcp_server", { id, spec });
+    } catch (error) {
+      console.error("保存 MCP 服务器失败:", error);
+      throw error;
+    }
+  },
+
+  // Claude MCP：删除服务器定义
+  deleteClaudeMcpServer: async (id: string): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("delete_claude_mcp_server", { id });
+    } catch (error) {
+      console.error("删除 MCP 服务器失败:", error);
+      throw error;
+    }
+  },
+
+  // Claude MCP：校验命令是否在 PATH 中
+  validateMcpCommand: async (cmd: string): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("validate_mcp_command", { cmd });
+    } catch (error) {
+      console.error("校验 MCP 命令失败:", error);
+      return false;
+    }
+  },
+
+  // 新：config.json 为 SSOT 的 MCP API（按客户端）
+  getMcpConfig: async (app: AppType = "claude"): Promise<McpConfigResponse> => {
+    try {
+      return await invoke<McpConfigResponse>("get_mcp_config", { app });
+    } catch (error) {
+      console.error("获取 MCP 配置失败:", error);
+      throw error;
+    }
+  },
+
+  upsertMcpServerInConfig: async (
+    app: AppType = "claude",
+    id: string,
+    spec: McpServer,
+    options?: { syncOtherSide?: boolean },
+  ): Promise<boolean> => {
+    try {
+      const payload = {
+        app,
+        id,
+        spec,
+        ...(options?.syncOtherSide !== undefined
+          ? { syncOtherSide: options.syncOtherSide }
+          : {}),
+      };
+      return await invoke<boolean>("upsert_mcp_server_in_config", payload);
+    } catch (error) {
+      console.error("写入 MCP（config.json）失败:", error);
+      throw error;
+    }
+  },
+
+  deleteMcpServerInConfig: async (
+    app: AppType = "claude",
+    id: string,
+  ): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("delete_mcp_server_in_config", { app, id });
+    } catch (error) {
+      console.error("删除 MCP（config.json）失败:", error);
+      throw error;
+    }
+  },
+
+  setMcpEnabled: async (
+    app: AppType = "claude",
+    id: string,
+    enabled: boolean,
+  ): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("set_mcp_enabled", { app, id, enabled });
+    } catch (error) {
+      console.error("设置 MCP 启用状态失败:", error);
+      throw error;
+    }
+  },
+
+  syncEnabledMcpToClaude: async (): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("sync_enabled_mcp_to_claude");
+    } catch (error) {
+      console.error("同步启用 MCP 到 .claude.json 失败:", error);
+      throw error;
+    }
+  },
+
+  // 手动同步：将启用的 MCP 投影到 ~/.codex/config.toml
+  syncEnabledMcpToCodex: async (): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("sync_enabled_mcp_to_codex");
+    } catch (error) {
+      console.error("同步启用 MCP 到 config.toml 失败:", error);
+      throw error;
+    }
+  },
+
+  importMcpFromClaude: async (): Promise<number> => {
+    try {
+      return await invoke<number>("import_mcp_from_claude");
+    } catch (error) {
+      console.error("从 ~/.claude.json 导入 MCP 失败:", error);
+      throw error;
+    }
+  },
+
+  // 从 ~/.codex/config.toml 导入 MCP（Codex 作用域）
+  importMcpFromCodex: async (): Promise<number> => {
+    try {
+      return await invoke<number>("import_mcp_from_codex");
+    } catch (error) {
+      console.error("从 ~/.codex/config.toml 导入 MCP 失败:", error);
+      throw error;
+    }
+  },
+
+  // 读取当前生效（live）的 provider settings（根据 appType）
+  // Codex: { auth: object, config: string }
+  // Claude: settings.json 内容
+  getLiveProviderSettings: async (app?: AppType): Promise<any> => {
+    try {
+      return await invoke<any>("read_live_provider_settings", {
+        app_type: app,
+        app,
+        appType: app,
+      });
+    } catch (error) {
+      console.error("读取 live 配置失败:", error);
+      throw error;
     }
   },
 
@@ -382,26 +586,38 @@ export const tauriAPI = {
 
   // theirs: 导入导出与文件对话框
   // 导出配置到文件
-  exportConfigToFile: async (filePath: string): Promise<{
+  exportConfigToFile: async (
+    filePath: string,
+  ): Promise<{
     success: boolean;
     message: string;
     filePath: string;
   }> => {
     try {
-      return await invoke("export_config_to_file", { filePath });
+      // 兼容参数命名差异：同时传递 file_path 与 filePath
+      return await invoke("export_config_to_file", {
+        file_path: filePath,
+        filePath: filePath,
+      });
     } catch (error) {
       throw new Error(`导出配置失败: ${String(error)}`);
     }
   },
 
   // 从文件导入配置
-  importConfigFromFile: async (filePath: string): Promise<{
+  importConfigFromFile: async (
+    filePath: string,
+  ): Promise<{
     success: boolean;
     message: string;
     backupId?: string;
   }> => {
     try {
-      return await invoke("import_config_from_file", { filePath });
+      // 兼容参数命名差异：同时传递 file_path 与 filePath
+      return await invoke("import_config_from_file", {
+        file_path: filePath,
+        filePath: filePath,
+      });
     } catch (error) {
       throw new Error(`导入配置失败: ${String(error)}`);
     }
@@ -410,7 +626,11 @@ export const tauriAPI = {
   // 保存文件对话框
   saveFileDialog: async (defaultName: string): Promise<string | null> => {
     try {
-      const result = await invoke<string | null>("save_file_dialog", { defaultName });
+      // 兼容参数命名差异：同时传递 default_name 与 defaultName
+      const result = await invoke<string | null>("save_file_dialog", {
+        default_name: defaultName,
+        defaultName: defaultName,
+      });
       return result;
     } catch (error) {
       console.error("打开保存对话框失败:", error);
@@ -442,6 +662,43 @@ export const tauriAPI = {
       }
     });
     return unlisten;
+  },
+
+  // 获取 app_config_dir 覆盖配置(从 Store)
+  getAppConfigDirOverride: async (): Promise<string | null> => {
+    try {
+      return await invoke<string | null>("get_app_config_dir_override");
+    } catch (error) {
+      console.error("获取 app_config_dir 覆盖配置失败:", error);
+      return null;
+    }
+  },
+
+  // 设置 app_config_dir 覆盖配置(到 Store)
+  setAppConfigDirOverride: async (path: string | null): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("set_app_config_dir_override", { path });
+    } catch (error) {
+      console.error("设置 app_config_dir 覆盖配置失败:", error);
+      throw error;
+    }
+  },
+
+  // Update providers sort order
+  updateProvidersSortOrder: async (
+    updates: Array<{ id: string; sortIndex: number }>,
+    app?: AppType,
+  ): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("update_providers_sort_order", {
+        updates,
+        app_type: app,
+        app,
+      });
+    } catch (error) {
+      console.error("更新供应商排序失败:", error);
+      throw error;
+    }
   },
 };
 

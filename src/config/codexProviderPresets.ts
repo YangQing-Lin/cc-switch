@@ -32,7 +32,7 @@ export function generateThirdPartyAuth(apiKey: string): Record<string, any> {
 export function generateThirdPartyConfig(
   providerName: string,
   baseUrl: string,
-  modelName = "gpt-5-codex"
+  modelName = "gpt-5-codex",
 ): string {
   // 清理供应商名称，确保符合TOML键名规范
   const cleanProviderName =
@@ -49,12 +49,13 @@ disable_response_storage = true
 [model_providers.${cleanProviderName}]
 name = "${cleanProviderName}"
 base_url = "${baseUrl}"
-wire_api = "responses"`;
+wire_api = "responses"
+requires_openai_auth = true`;
 }
 
 export const codexProviderPresets: CodexProviderPreset[] = [
   {
-    name: "Codex官方",
+    name: "Codex Official",
     websiteUrl: "https://chatgpt.com/codex",
     isOfficial: true,
     category: "official",
@@ -71,7 +72,7 @@ export const codexProviderPresets: CodexProviderPreset[] = [
     config: generateThirdPartyConfig(
       "packycode",
       "https://codex-api.packycode.com/v1",
-      "gpt-5-codex"
+      "gpt-5-codex",
     ),
     // Codex 请求地址候选（用于地址管理/测速）
     endpointCandidates: [

@@ -24,9 +24,18 @@ import { isLinux } from "../lib/platform";
 interface SettingsModalProps {
   onClose: () => void;
   onImportSuccess?: () => void | Promise<void>;
+  onNotify?: (
+    message: string,
+    type: "success" | "error",
+    duration?: number,
+  ) => void;
 }
 
-export default function SettingsModal({ onClose, onImportSuccess }: SettingsModalProps) {
+export default function SettingsModal({
+  onClose,
+  onImportSuccess,
+  onNotify,
+}: SettingsModalProps) {
   const { t, i18n } = useTranslation();
 
   const normalizeLanguage = (lang?: string | null): "zh" | "en" =>
@@ -47,10 +56,15 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
   const [settings, setSettings] = useState<Settings>({
     showInTray: true,
     minimizeToTrayOnClose: true,
+    enableClaudePluginIntegration: false,
     claudeConfigDir: undefined,
     codexConfigDir: undefined,
     language: persistedLanguage,
   });
+  // appConfigDir 现在从 Store 独立管理
+  const [appConfigDir, setAppConfigDir] = useState<string | undefined>(
+    undefined,
+  );
   const [initialLanguage, setInitialLanguage] = useState<"zh" | "en">(
     persistedLanguage,
   );
@@ -59,21 +73,29 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showUpToDate, setShowUpToDate] = useState(false);
+  const [resolvedAppConfigDir, setResolvedAppConfigDir] = useState<string>("");
   const [resolvedClaudeDir, setResolvedClaudeDir] = useState<string>("");
   const [resolvedCodexDir, setResolvedCodexDir] = useState<string>("");
   const [isPortable, setIsPortable] = useState(false);
+  const [initialAppConfigDir, setInitialAppConfigDir] = useState<
+    string | undefined
+  >(undefined);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
   const { hasUpdate, updateInfo, updateHandle, checkUpdate, resetDismiss } =
     useUpdate();
 
   // 导入/导出相关状态
   const [isImporting, setIsImporting] = useState(false);
-  const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'success' | 'error'>('idle');
+  const [importStatus, setImportStatus] = useState<
+    "idle" | "importing" | "success" | "error"
+  >("idle");
   const [importError, setImportError] = useState<string>("");
   const [importBackupId, setImportBackupId] = useState<string>("");
-  const [selectedImportFile, setSelectedImportFile] = useState<string>('');
+  const [selectedImportFile, setSelectedImportFile] = useState<string>("");
 
   useEffect(() => {
     loadSettings();
+    loadAppConfigDirFromStore(); // 从 Store 加载 appConfigDir
     loadConfigPath();
     loadVersion();
     loadResolvedDirs();
@@ -88,6 +110,24 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
       console.error(t("console.getVersionFailed"), error);
       // 失败时不硬编码版本号，显示为未知
       setVersion(t("common.unknown"));
+    }
+  };
+
+  // 从 Tauri Store 加载 appConfigDir
+  const loadAppConfigDirFromStore = async () => {
+    try {
+      const storeValue = await (window as any).api.getAppConfigDirOverride();
+      if (storeValue) {
+        setAppConfigDir(storeValue);
+        setInitialAppConfigDir(storeValue);
+        setResolvedAppConfigDir(storeValue);
+      } else {
+        // 使用默认值
+        const defaultDir = await computeDefaultAppConfigDir();
+        setResolvedAppConfigDir(defaultDir);
+      }
+    } catch (error) {
+      console.error("从 Store 加载 appConfigDir 失败:", error);
     }
   };
 
@@ -111,6 +151,11 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
       setSettings({
         showInTray,
         minimizeToTrayOnClose,
+        enableClaudePluginIntegration:
+          typeof (loadedSettings as any)?.enableClaudePluginIntegration ===
+          "boolean"
+            ? (loadedSettings as any).enableClaudePluginIntegration
+            : false,
         claudeConfigDir:
           typeof (loadedSettings as any)?.claudeConfigDir === "string"
             ? (loadedSettings as any).claudeConfigDir
@@ -178,8 +223,35 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
             : undefined,
         language: selectedLanguage,
       };
+
+      // 保存 settings.json (不包含 appConfigDir)
       await window.api.saveSettings(payload);
+
+      // 单独保存 appConfigDir 到 Store
+      const normalizedAppConfigDir =
+        appConfigDir && appConfigDir.trim() !== ""
+          ? appConfigDir.trim()
+          : null;
+      await (window as any).api.setAppConfigDirOverride(normalizedAppConfigDir);
+
+      // 立即生效：根据开关无条件写入/移除 ~/.claude/config.json
+      try {
+        if (payload.enableClaudePluginIntegration) {
+          await window.api.applyClaudePluginConfig({ official: false });
+        } else {
+          await window.api.applyClaudePluginConfig({ official: true });
+        }
+      } catch (e) {
+        console.warn("[Settings] Apply Claude plugin config on save failed", e);
+      }
+
+      // 检测 appConfigDir 是否真正发生变化
+      const appConfigDirChanged =
+        (normalizedAppConfigDir || undefined) !==
+        (initialAppConfigDir || undefined);
+
       setSettings(payload);
+      setInitialAppConfigDir(normalizedAppConfigDir ?? undefined);
       try {
         window.localStorage.setItem("language", selectedLanguage);
       } catch (error) {
@@ -189,10 +261,45 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
       if (i18n.language !== selectedLanguage) {
         void i18n.changeLanguage(selectedLanguage);
       }
-      onClose();
+
+      // 如果修改了 appConfigDir,需要提示用户重启应用程序
+      if (appConfigDirChanged) {
+        setShowRestartDialog(true);
+      } else {
+        onClose();
+      }
     } catch (error) {
       console.error(t("console.saveSettingsFailed"), error);
     }
+  };
+
+  const handleRestartNow = async () => {
+    // 开发模式下不真正重启,只提示
+    if (import.meta.env.DEV) {
+      onNotify?.(
+        t("settings.devModeRestartHint"),
+        "success",
+        5000,
+      );
+      setShowRestartDialog(false);
+      onClose();
+      return;
+    }
+
+    // 生产模式下真正重启应用
+    try {
+      await window.api.restartApp();
+    } catch (e) {
+      console.warn("[Settings] Restart app failed", e);
+      // 如果重启失败，仍然关闭设置窗口
+      setShowRestartDialog(false);
+      onClose();
+    }
+  };
+
+  const handleRestartLater = () => {
+    setShowRestartDialog(false);
+    onClose();
   };
 
   const handleLanguageChange = (lang: "zh" | "en") => {
@@ -271,6 +378,28 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
     }
   };
 
+  const handleBrowseAppConfigDir = async () => {
+    try {
+      const currentResolved = appConfigDir ?? resolvedAppConfigDir;
+      const selected = await window.api.selectConfigDirectory(currentResolved);
+
+      if (!selected) {
+        return;
+      }
+
+      const sanitized = selected.trim();
+
+      if (sanitized === "") {
+        return;
+      }
+
+      setAppConfigDir(sanitized);
+      setResolvedAppConfigDir(sanitized);
+    } catch (error) {
+      console.error(t("console.selectConfigDirFailed"), error);
+    }
+  };
+
   const handleBrowseConfigDir = async (app: AppType) => {
     try {
       const currentResolved =
@@ -313,6 +442,24 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
     }
   };
 
+  const computeDefaultAppConfigDir = async () => {
+    try {
+      const home = await homeDir();
+      return await join(home, ".cc-switch");
+    } catch (error) {
+      console.error(t("console.getDefaultConfigDirFailed"), error);
+      return "";
+    }
+  };
+
+  const handleResetAppConfigDir = async () => {
+    setAppConfigDir(undefined);
+    const defaultDir = await computeDefaultAppConfigDir();
+    if (defaultDir) {
+      setResolvedAppConfigDir(defaultDir);
+    }
+  };
+
   const handleResetConfigDir = async (app: AppType) => {
     setSettings((prev) => ({
       ...prev,
@@ -340,7 +487,7 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
       // 如果未知或为空，回退到 releases 首页
       if (!targetVersion || targetVersion === unknownLabel) {
         await window.api.openExternal(
-          "https://github.com/farion1231/cc-switch/releases"
+          "https://github.com/farion1231/cc-switch/releases",
         );
         return;
       }
@@ -348,7 +495,7 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
         ? targetVersion
         : `v${targetVersion}`;
       await window.api.openExternal(
-        `https://github.com/farion1231/cc-switch/releases/tag/${tag}`
+        `https://github.com/farion1231/cc-switch/releases/tag/${tag}`,
       );
     } catch (error) {
       console.error(t("console.openReleaseNotesFailed"), error);
@@ -358,19 +505,34 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
   // 导出配置处理函数
   const handleExportConfig = async () => {
     try {
-      const defaultName = `cc-switch-config-${new Date().toISOString().split('T')[0]}.json`;
+      const defaultName = `cc-switch-config-${new Date().toISOString().split("T")[0]}.json`;
       const filePath = await window.api.saveFileDialog(defaultName);
 
-      if (!filePath) return; // 用户取消了
+      if (!filePath) {
+        onNotify?.(
+          `${t("settings.exportFailed")}: ${t("settings.selectFileFailed")}`,
+          "error",
+          4000,
+        );
+        return;
+      }
 
       const result = await window.api.exportConfigToFile(filePath);
 
       if (result.success) {
-        alert(`${t("settings.configExported")}\n${result.filePath}`);
+        onNotify?.(
+          `${t("settings.configExported")}\n${result.filePath}`,
+          "success",
+          4000,
+        );
       }
     } catch (error) {
-      console.error("导出配置失败:", error);
-      alert(`${t("settings.exportFailed")}: ${error}`);
+      console.error(t("settings.exportFailedError"), error);
+      onNotify?.(
+        `${t("settings.exportFailed")}: ${String(error)}`,
+        "error",
+        5000,
+      );
     }
   };
 
@@ -380,12 +542,16 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
       const filePath = await window.api.openFileDialog();
       if (filePath) {
         setSelectedImportFile(filePath);
-        setImportStatus('idle'); // 重置状态
-        setImportError('');
+        setImportStatus("idle"); // 重置状态
+        setImportError("");
       }
     } catch (error) {
-      console.error('选择文件失败:', error);
-      alert(`${t("settings.selectFileFailed")}: ${error}`);
+      console.error(t("settings.selectFileFailed") + ":", error);
+      onNotify?.(
+        `${t("settings.selectFileFailed")}: ${String(error)}`,
+        "error",
+        5000,
+      );
     }
   };
 
@@ -394,22 +560,22 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
     if (!selectedImportFile || isImporting) return;
 
     setIsImporting(true);
-    setImportStatus('importing');
+    setImportStatus("importing");
 
     try {
       const result = await window.api.importConfigFromFile(selectedImportFile);
 
       if (result.success) {
-        setImportBackupId(result.backupId || '');
-        setImportStatus('success');
+        setImportBackupId(result.backupId || "");
+        setImportStatus("success");
         // ImportProgressModal 会在2秒后触发数据刷新回调
       } else {
         setImportError(result.message || t("settings.configCorrupted"));
-        setImportStatus('error');
+        setImportStatus("error");
       }
     } catch (error) {
       setImportError(String(error));
-      setImportStatus('error');
+      setImportStatus("error");
     } finally {
       setIsImporting(false);
     }
@@ -501,6 +667,28 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
                   className="w-4 h-4 text-blue-500 rounded focus:ring-blue-500/20"
                 />
               </label>
+              {/* Claude 插件联动开关 */}
+              <label className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm text-gray-900 dark:text-gray-100">
+                    {t("settings.enableClaudePluginIntegration")}
+                  </span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-[34rem]">
+                    {t("settings.enableClaudePluginIntegrationDescription")}
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!settings.enableClaudePluginIntegration}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      enableClaudePluginIntegration: e.target.checked,
+                    }))
+                  }
+                  className="w-4 h-4 text-blue-500 rounded focus:ring-blue-500/20"
+                />
+              </label>
             </div>
           </div>
 
@@ -537,6 +725,40 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
               {t("settings.configDirectoryDescription")}
             </p>
             <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  {t("settings.appConfigDir")}
+                </label>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+                  {t("settings.appConfigDirDescription")}
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={appConfigDir ?? resolvedAppConfigDir ?? ""}
+                    onChange={(e) => setAppConfigDir(e.target.value)}
+                    placeholder={t("settings.browsePlaceholderApp")}
+                    className="flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleBrowseAppConfigDir}
+                    className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    title={t("settings.browseDirectory")}
+                  >
+                    <FolderSearch size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetAppConfigDir}
+                    className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    title={t("settings.resetDefault")}
+                  >
+                    <Undo2 size={16} />
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                   {t("settings.claudeConfigDir")}
@@ -642,18 +864,22 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
                       disabled={!selectedImportFile || isImporting}
                       className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors text-white ${
                         !selectedImportFile || isImporting
-                          ? 'bg-gray-400 cursor-not-allowed'
-                          : 'bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700'
+                          ? "bg-gray-400 cursor-not-allowed"
+                          : "bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
                       }`}
                     >
-                      {isImporting ? t("settings.importing") : t("settings.import")}
+                      {isImporting
+                        ? t("settings.importing")
+                        : t("settings.import")}
                     </button>
                   </div>
 
                   {/* 显示选择的文件 */}
                   {selectedImportFile && (
                     <div className="text-xs text-gray-600 dark:text-gray-400 px-2 py-1 bg-gray-50 dark:bg-gray-900 rounded break-all">
-                      {selectedImportFile.split('/').pop() || selectedImportFile.split('\\').pop() || selectedImportFile}
+                      {selectedImportFile.split("/").pop() ||
+                        selectedImportFile.split("\\").pop() ||
+                        selectedImportFile}
                     </div>
                   )}
                 </div>
@@ -757,15 +983,15 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
       </div>
 
       {/* Import Progress Modal */}
-      {importStatus !== 'idle' && (
+      {importStatus !== "idle" && (
         <ImportProgressModal
           status={importStatus}
           message={importError}
           backupId={importBackupId}
           onComplete={() => {
-            setImportStatus('idle');
-            setImportError('');
-            setSelectedImportFile('');
+            setImportStatus("idle");
+            setImportError("");
+            setSelectedImportFile("");
           }}
           onSuccess={() => {
             if (onImportSuccess) {
@@ -773,9 +999,47 @@ export default function SettingsModal({ onClose, onImportSuccess }: SettingsModa
             }
             void window.api
               .updateTrayMenu()
-              .catch((error) => console.error("[SettingsModal] Failed to refresh tray menu", error));
+              .catch((error) =>
+                console.error(
+                  "[SettingsModal] Failed to refresh tray menu",
+                  error,
+                ),
+              );
           }}
         />
+      )}
+
+      {/* Restart Confirmation Dialog */}
+      {showRestartDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className={`absolute inset-0 bg-black/50 dark:bg-black/70${
+              isLinux() ? "" : " backdrop-blur-sm"
+            }`}
+          />
+          <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[400px] p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+              {t("settings.restartRequired")}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              {t("settings.restartRequiredMessage")}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleRestartLater}
+                className="px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                {t("settings.restartLater")}
+              </button>
+              <button
+                onClick={handleRestartNow}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                {t("settings.restartNow")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
